@@ -112,7 +112,7 @@ async function onPhoto(msg, chatId, env) {
   ).bind(chatId, key, JSON.stringify(datos)).run();
   const id = ins.meta.last_row_id;
 
-  const { results: metodos } = await env.DB.prepare('SELECT id, nombre FROM metodos_pago WHERE activo=1 ORDER BY id').all();
+  const { results: metodos } = await env.DB.prepare('SELECT id, nombre FROM metodos_pago WHERE activo=1 AND nombre != 'Sin clasificar' ORDER BY id').all();
   const teclado = [];
   for (let i = 0; i < metodos.length; i += 2) {
     teclado.push(metodos.slice(i, i + 2).map((m) => ({ text: m.nombre, callback_data: `pm:${id}:${m.id}` })));
