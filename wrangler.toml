@@ -12,3 +12,6 @@ database_id = "9090dfef-237b-4b53-850b-cdd3b0232fdf"
 [[r2_buckets]]
 binding = "TICKETS"
 bucket_name = "gastos-tickets"
+
+[observability]
+enabled = true

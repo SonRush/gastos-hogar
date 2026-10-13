@@ -24,7 +24,11 @@ export default {
       return new Response('forbidden', { status: 403 });
     }
     const update = await req.json();
-    ctx.waitUntil(handle(update, env).catch((e) => console.error('error', e && e.message)));
+    ctx.waitUntil(handle(update, env).catch(async (e) => {
+      console.error('error', e && e.message);
+      const id = (update.message || update.callback_query?.message)?.chat?.id;
+      if (id) await send(env, id, `Error interno: ${String(e && e.message).slice(0, 200)}`).catch(() => {});
+    }));
     return new Response('ok');
   },
 };
@@ -135,6 +139,7 @@ async function leerTicket(bytes, cats, env, chatId) {
     intentos.push(() => llamar('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       env.GEMINI_API_KEY, 'gemini-flash-latest', prompt, b64));
   }
+  const fallos = [];
   for (const [i, f] of intentos.entries()) {
     try {
       const { texto, usage, modelo } = await f();
@@ -145,8 +150,10 @@ async function leerTicket(bytes, cats, env, chatId) {
       if (d) return d;
     } catch (e) {
       console.error('ia fallo', i, e.message);
+      fallos.push(e.message);
     }
   }
+  if (fallos.length) await send(env, chatId, `Fallo la IA: ${fallos.join(' | ').slice(0, 300)}`);
   return null;
 }
 
@@ -162,7 +169,10 @@ async function llamar(url, key, modelo, prompt, b64) {
       ] }],
     }),
   });
-  if (!r.ok) throw new Error(`${modelo} HTTP ${r.status}`);
+  if (!r.ok) {
+    const detalle = (await r.text()).replace(/\s+/g, ' ').slice(0, 150);
+    throw new Error(`${modelo} HTTP ${r.status} ${detalle}`);
+  }
   const j = await r.json();
   return { texto: j.choices?.[0]?.message?.content ?? '', usage: j.usage, modelo };
 }
