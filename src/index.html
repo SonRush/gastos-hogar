@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gastos del hogar</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --tx:#1b1f24; --mut:#6b7380; --line:#e3e6ea; --ac:#2f6fed; --ok:#1f9d63; --warn:#d98a00; --bad:#d64545; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#181d24; --tx:#e8ebef; --mut:#8c95a3; --line:#27303a; --ac:#5b94ff; --ok:#37c07f; --warn:#f0a928; --bad:#ef6a6a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:16px/1.4 system-ui, sans-serif; padding-bottom:72px; }
+  header { position:sticky; top:0; background:var(--bg); padding:12px 16px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); z-index:5; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  header button { background:var(--card); border:1px solid var(--line); color:var(--tx); border-radius:8px; padding:6px 12px; font-size:16px; }
+  main { padding:16px; max-width:720px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .total { font-size:30px; font-weight:700; }
+  .mut { color:var(--mut); font-size:14px; }
+  .row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .bar { height:8px; background:var(--line); border-radius:4px; margin-top:6px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--ac); }
+  .bar.warn > i { background:var(--warn); } .bar.bad > i { background:var(--bad); }
+  .item { padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .item:last-child { border-bottom:0; }
+  .arch { opacity:.5; } .neg { color:var(--ok); }
+  nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--line); }
+  nav button { flex:1; padding:16px 0; background:none; border:0; color:var(--mut); font-size:15px; }
+  nav button.on { color:var(--ac); font-weight:600; }
+  .sheet { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:flex-end; z-index:10; }
+  .sheet > div { background:var(--card); width:100%; max-height:92vh; overflow:auto; border-radius:16px 16px 0 0; padding:16px; max-width:720px; margin:0 auto; }
+  label { display:block; margin:10px 0 4px; color:var(--mut); font-size:14px; }
+  input, select { width:100%; padding:10px; font-size:16px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--tx); }
+  .btns { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .btns button { flex:1; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--tx); font-size:16px; min-width:110px; }
+  .btns .pri { background:var(--ac); border-color:var(--ac); color:#fff; }
+  .btns .del { color:var(--bad); }
+  img.t { max-width:100%; border-radius:8px; margin-top:10px; }
+  .chk { display:flex; align-items:center; gap:8px; margin:8px 0; color:var(--mut); }
+  .chk input { width:auto; }
+</style>
+</head>
+<body>
+<header>
+  <button id="prev" aria-label="Mes anterior">‹</button>
+  <h1 id="mes"></h1>
+  <button id="next" aria-label="Mes siguiente">›</button>
+</header>
+<main id="main"></main>
+<nav>
+  <button data-v="resumen" class="on">Resumen</button>
+  <button data-v="gastos">Gastos</button>
+  <button data-v="presupuestos">Presupuestos</button>
+</nav>
+<script>
+const $ = (s) => document.querySelector(s);
+const state = { vista: 'resumen', mes: null, meta: null, archivados: false };
+const money = (c) => (c < 0 ? '-' : '') + '$' + (Math.abs(c) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') n.className = v; else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n[k] = v;
+  }
+  for (const k of kids.flat()) if (k != null) n.append(k);
+  return n;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts && { ...opts, headers: { 'content-type': 'application/json' }, body: opts.body && JSON.stringify(opts.body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
+  return d;
+}
+function mesActual() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()).slice(0, 7);
+}
+function moverMes(d) {
+  const [y, m] = state.mes.split('-').map(Number);
+  const f = new Date(y, m - 1 + d, 1);
+  state.mes = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0');
+  render();
+}
+function pesosACentavos(txt) {
+  const n = Number(String(txt).replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) ? Math.round(n * 100) : NaN;
+}
+
+async function render() {
+  const [y, m] = state.mes.split('-');
+  $('#mes').textContent = MESES[Number(m) - 1] + ' ' + y;
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.vista));
+  const main = $('#main');
+  main.replaceChildren(el('p', { class: 'mut' }, 'Cargando…'));
+  try {
+    const vista = { resumen: vResumen, gastos: vGastos, presupuestos: vPresupuestos }[state.vista];
+    main.replaceChildren(...(await vista()));
+  } catch (e) { main.replaceChildren(el('p', {}, 'Error: ' + e.message)); }
+}
+
+async function vResumen() {
+  const d = await api('/api/resumen?mes=' + state.mes);
+  const cards = [el('div', { class: 'card' }, el('div', { class: 'mut' }, 'Gasto del mes'), el('div', { class: 'total' }, money(d.total)))];
+  for (const c of d.categorias) {
+    if (!c.gastado && !c.presupuesto) continue;
+    const pct = c.presupuesto ? Math.round((c.gastado / c.presupuesto) * 100) : null;
+    const barra = el('div', { class: 'bar' + (pct > 100 ? ' bad' : pct >= 80 ? ' warn' : '') }, el('i', { style: 'width:' + Math.min(pct ?? 0, 100) + '%' }));
+    cards.push(el('div', { class: 'card' },
+      el('div', { class: 'row' }, el('b', {}, c.nombre), el('span', {}, money(c.gastado))),
+      c.presupuesto ? [barra, el('div', { class: 'mut' }, pct + '% de ' + money(c.presupuesto))] : el('div', { class: 'mut' }, 'Sin presupuesto')));
+  }
+  if (cards.length === 1) cards.push(el('p', { class: 'mut' }, 'Sin gastos este mes.'));
+  return cards;
+}
+
+async function vGastos() {
+  const d = await api('/api/gastos?mes=' + state.mes + (state.archivados ? '&archivados=1' : ''));
+  const chk = el('label', { class: 'chk' }, el('input', { type: 'checkbox', checked: state.archivados, onchange: (e) => { state.archivados = e.target.checked; render(); } }), 'Mostrar archivados');
+  const lista = el('div', { class: 'card' });
+  if (!d.gastos.length) lista.append(el('p', { class: 'mut' }, 'Sin gastos este mes.'));
+  for (const g of d.gastos) {
+    lista.append(el('div', { class: 'item' + (g.estado === 'archivado' ? ' arch' : ''), onclick: () => abrirGasto(g) },
+      el('div', { class: 'row' }, el('b', {}, g.comercio || 'Sin comercio'), el('span', { class: g.monto_centavos < 0 ? 'neg' : '' }, money(g.monto_centavos))),
+      el('div', { class: 'mut' }, [g.fecha, g.categoria || 'Sin categoría', g.metodo || 'Sin método', g.estado === 'archivado' ? 'archivado' : null].filter(Boolean).join(' · '))));
+  }
+  return [chk, lista];
+}
+
+function opciones(lista, sel) {
+  return lista.map((o) => el('option', { value: o.id, selected: o.id === sel }, o.nombre));
+}
+
+async function abrirGasto(g) {
+  if (!state.meta) state.meta = await api('/api/meta');
+  const fMonto = el('input', { inputMode: 'decimal', value: (g.monto_centavos / 100).toFixed(2) });
+  const fFecha = el('input', { type: 'date', value: g.fecha });
+  const fCom = el('input', { value: g.comercio || '' });
+  const fCat = el('select', {}, opciones(state.meta.categorias, g.categoria_id));
+  const fMet = el('select', {}, opciones(state.meta.metodos, g.metodo_pago_id));
+  const err = el('p', { class: 'mut' });
+  const cerrar = () => sheet.remove();
+  const hacer = (fn) => async () => { try { await fn(); cerrar(); render(); } catch (e) { err.textContent = e.message; } };
+
+  const guardar = hacer(async () => {
+    const monto = pesosACentavos(fMonto.value);
+    if (!monto) throw new Error('Monto inválido');
+    await api('/api/gastos/' + g.id, { method: 'PATCH', body: {
+      monto_centavos: monto, fecha: fFecha.value, comercio: fCom.value,
+      categoria_id: Number(fCat.value), metodo_pago_id: Number(fMet.value) } });
+  });
+  const archivar = hacer(() => api('/api/gastos/' + g.id + '/' + (g.estado === 'archivado' ? 'restaurar' : 'archivar'), { method: 'POST' }));
+  const devolver = hacer(async () => {
+    const t = prompt('Monto a devolver (vacío = completo)', '');
+    if (t === null) throw new Error('Cancelado');
+    const body = t.trim() ? { monto_centavos: pesosACentavos(t) } : {};
+    await api('/api/gastos/' + g.id + '/devolucion', { method: 'POST', body });
+  });
+
+  const btns = el('div', { class: 'btns' },
+    el('button', { class: 'pri', onclick: guardar }, 'Guardar'),
+    g.monto_centavos > 0 && !g.devolucion_de ? el('button', { onclick: devolver }, 'Devolución') : null,
+    el('button', { class: 'del', onclick: archivar }, g.estado === 'archivado' ? 'Restaurar' : 'Archivar'),
+    el('button', { onclick: cerrar }, 'Cerrar'));
+  const sheet = el('div', { class: 'sheet', onclick: (e) => e.target === sheet && cerrar() }, el('div', {},
+    el('b', {}, 'Editar gasto'),
+    el('label', {}, 'Monto'), fMonto, el('label', {}, 'Fecha'), fFecha, el('label', {}, 'Comercio'), fCom,
+    el('label', {}, 'Categoría'), fCat, el('label', {}, 'Método de pago'), fMet,
+    g.tiene_imagen ? el('img', { class: 't', src: '/api/gastos/' + g.id + '/imagen', alt: 'Ticket' }) : null,
+    err, btns));
+  document.body.append(sheet);
+}
+
+async function vPresupuestos() {
+  const d = await api('/api/resumen?mes=' + state.mes);
+  const card = el('div', { class: 'card' }, el('p', { class: 'mut' }, 'Presupuesto mensual por categoría. Déjalo vacío para quitarlo.'));
+  for (const c of d.categorias) {
+    const inp = el('input', { inputMode: 'decimal', placeholder: 'Sin presupuesto', value: c.presupuesto ? (c.presupuesto / 100).toFixed(2) : '' });
+    const msg = el('span', { class: 'mut' });
+    inp.addEventListener('change', async () => {
+      const v = inp.value.trim() ? pesosACentavos(inp.value) : null;
+      if (v !== null && !(v >= 0)) { msg.textContent = 'inválido'; return; }
+      try { await api('/api/categorias/' + c.id, { method: 'PUT', body: { presupuesto_centavos: v } }); msg.textContent = 'guardado'; }
+      catch (e) { msg.textContent = e.message; }
+    });
+    card.append(el('label', {}, c.nombre), inp, msg);
+  }
+  return [card];
+}
+
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => { state.vista = b.dataset.v; render(); }));
+$('#prev').addEventListener('click', () => moverMes(-1));
+$('#next').addEventListener('click', () => moverMes(1));
+state.mes = mesActual();
+render();
+</script>
+</body>
+</html>

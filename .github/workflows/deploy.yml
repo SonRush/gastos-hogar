@@ -2,7 +2,7 @@ name: Deploy bot
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'wrangler.toml', '.github/workflows/deploy.yml']
+    paths: ['src/**', 'wrangler.toml', 'wrangler.app.toml', '.github/workflows/deploy.yml']
   workflow_dispatch:
 
 jobs:
@@ -25,6 +25,13 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ALLOWED_CHAT_IDS: ${{ secrets.ALLOWED_CHAT_IDS }}
+      - name: Deploy app (dashboard)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy -c wrangler.app.toml
       - name: Registrar webhook en Telegram
         run: |
           set -o pipefail
