@@ -45,12 +45,14 @@ def metodo(texto):
             return 'TC Nu Oswa'
         if 'vero' in palabras:
             return 'TC Nu Vero'
-        return 'Sin clasificar'  # "Tc nu" sin titular
+        return 'TC Nu Oswa'  # "Tc nu" sin titular: es la de Jorge (confirmado)
     if t.startswith('td') or t.startswith('debito'):
         if 'vero' in palabras:
             return 'Débito Vero'
         if 'oswa' in palabras:
             return 'Débito Oswa'
+        if t.startswith('debito'):
+            return 'Débito Vero'  # "Débito" sin titular: es el de Vero (confirmado)
     return 'Sin clasificar'
 
 
