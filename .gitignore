@@ -1,0 +1,26 @@
+# Secretos
+.env
+.env.*
+.dev.vars
+*.pem
+*.key
+secrets/
+
+# Datos y tickets reales: NUNCA al repo (es publico)
+data/
+private/
+*.csv
+*.zip
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.sqlite
+*.db
+
+# Documentos de planeacion personal (nombres, dominio, etc.)
+Plan*.md
+
+# Cloudflare / node
+.wrangler/
+node_modules/
