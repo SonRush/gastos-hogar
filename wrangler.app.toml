@@ -4,10 +4,10 @@ compatibility_date = "2026-10-01"
 workers_dev = true
 preview_urls = false
 
-# Se llenan al activar Cloudflare Access (no son secretos). Vacios = la app rechaza todo.
+# Se llenan al activar Cloudflare Access (no son secretos). Si estan vacios la app rechaza todo.
 [vars]
-ACCESS_TEAM_DOMAIN = ""
-ACCESS_AUD = ""
+ACCESS_TEAM_DOMAIN = "royal-grass-1ab4.cloudflareaccess.com"
+ACCESS_AUD = "81f3852253c0724bad4b867ebdbf0056068b2eb3367f816ffb7ba51e432156b6"
 
 [[d1_databases]]
 binding = "DB"
