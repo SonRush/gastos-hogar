@@ -25,11 +25,11 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       - name: Registrar webhook en Telegram
         run: |
-          curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-            --data-urlencode "url=https://gastos-bot.jibarra90.workers.dev/webhook" \
-            --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
-            --data-urlencode 'allowed_updates=["message","callback_query"]' \
-            | sed 's/"result":true/ok/' | head -c 200
+          set -o pipefail
+          body=$(jq -n --arg url "https://gastos-bot.jibarra90.workers.dev/webhook" --arg s "$TELEGRAM_WEBHOOK_SECRET"             '{url:$url, secret_token:$s, allowed_updates:["message","callback_query"]}')
+          resp=$(curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"             -H 'content-type: application/json' -d "$body")
+          echo "$resp"
+          echo "$resp" | jq -e '.ok == true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
