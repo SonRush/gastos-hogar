@@ -113,6 +113,22 @@ async function onPhoto(msg, chatId, env) {
   ).bind(chatId, key, JSON.stringify(datos)).run();
   const id = ins.meta.last_row_id;
 
+  // Posible duplicado: mismo monto y mismo dia ya guardado, o un ticket igual esperando metodo de pago.
+  const yaGuardado = await env.DB.prepare(
+    `SELECT comercio FROM gastos WHERE estado='activo' AND monto_centavos=? AND fecha=? LIMIT 1`,
+  ).bind(datos.monto_centavos, datos.fecha).first();
+  const yaPendiente = yaGuardado ? null : await env.DB.prepare(
+    `SELECT 1 FROM tickets_pendientes WHERE chat_id=? AND id<>? AND json_extract(datos_json,'$.monto_centavos')=? AND json_extract(datos_json,'$.fecha')=? LIMIT 1`,
+  ).bind(chatId, id, datos.monto_centavos, datos.fecha).first();
+  if (yaGuardado || yaPendiente) {
+    const donde = yaGuardado ? `ya hay un gasto de ${money(datos.monto_centavos)} hoy${yaGuardado.comercio ? ' en ' + yaGuardado.comercio : ''}` : `tienes otro ticket de ${money(datos.monto_centavos)} esperando método de pago`;
+    return send(env, chatId, `⚠️ Posible duplicado: ${donde}.\nEste ticket: ${datos.comercio || 'Comercio'} · ${money(datos.monto_centavos)}\n\n¿Lo guardo de todos modos?`,
+      { reply_markup: { inline_keyboard: [[{ text: 'Guardar de todos modos', callback_data: `dup:${id}:ok` }, { text: 'Cancelar', callback_data: `dup:${id}:no` }]] } });
+  }
+  await pedirMetodo(env, chatId, id, datos);
+}
+
+async function pedirMetodo(env, chatId, id, datos) {
   const { results: metodos } = await env.DB.prepare("SELECT id, nombre FROM metodos_pago WHERE activo=1 AND nombre != 'Sin clasificar' ORDER BY id").all();
   const teclado = [];
   for (let i = 0; i < metodos.length; i += 2) {
@@ -197,6 +213,17 @@ function parse(texto, cats) {
 async function onCallback(cb, chatId, env) {
   await TG(env, 'answerCallbackQuery', { callback_query_id: cb.id });
   const [tipo, pid, mid] = (cb.data || '').split(':');
+  if (tipo === 'dup') {
+    const pend = await env.DB.prepare('SELECT * FROM tickets_pendientes WHERE id=? AND chat_id=?').bind(pid, chatId).first();
+    if (!pend) return send(env, chatId, 'Ese ticket ya fue procesado.');
+    if (mid === 'no') {
+      await env.DB.prepare('DELETE FROM tickets_pendientes WHERE id=?').bind(pid).run();
+      await env.TICKETS.delete(pend.imagen_key);
+      return TG(env, 'editMessageText', { chat_id: chatId, message_id: cb.message.message_id, text: 'Cancelado: el ticket duplicado no se guardó.' });
+    }
+    await TG(env, 'editMessageText', { chat_id: chatId, message_id: cb.message.message_id, text: 'Ok, lo guardo de todos modos.' });
+    return pedirMetodo(env, chatId, pend.id, JSON.parse(pend.datos_json));
+  }
   if (tipo !== 'pm') return;
 
   const p = await env.DB.prepare('SELECT * FROM tickets_pendientes WHERE id=? AND chat_id=?').bind(pid, chatId).first();
