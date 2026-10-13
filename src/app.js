@@ -63,6 +63,7 @@ export default {
       }
       if (path === '/api/meta') return meta(env, auth);
       if (path === '/api/resumen') return resumen(env, url);
+      if (path === '/api/analitica') return analitica(env, url);
       if (path === '/api/gastos' && req.method === 'GET') return listar(env, url);
 
       let m = path.match(/^\/api\/gastos\/(\d+)$/);
@@ -108,15 +109,44 @@ async function resumen(env, url) {
   return json({ mes, total, sin_categoria: sin.t, categorias: results });
 }
 
-async function listar(env, url) {
+async function analitica(env, url) {
   const mes = mesValido(url.searchParams.get('mes'));
+  const activo = "g.estado='activo'";
+  const [meses, cats, dias, metodos, comercios, sin] = await env.DB.batch([
+    env.DB.prepare(`SELECT substr(g.fecha,1,7) mes, SUM(g.monto_centavos) total, COUNT(*) n FROM gastos g WHERE ${activo} GROUP BY 1 ORDER BY 1`),
+    env.DB.prepare(
+      `SELECT c.id, c.nombre, c.presupuesto_centavos presupuesto, COALESCE(SUM(g.monto_centavos),0) gastado
+       FROM categorias c LEFT JOIN gastos g ON g.categoria_id=c.id AND ${activo} AND substr(g.fecha,1,7)=?
+       WHERE c.activa=1 GROUP BY c.id ORDER BY c.id`).bind(mes),
+    env.DB.prepare(`SELECT g.fecha, SUM(g.monto_centavos) total, COUNT(*) n FROM gastos g WHERE ${activo} AND substr(g.fecha,1,7)=? GROUP BY g.fecha ORDER BY g.fecha`).bind(mes),
+    env.DB.prepare(
+      `SELECT COALESCE(m.nombre,'Sin método') nombre, SUM(g.monto_centavos) total, COUNT(*) n
+       FROM gastos g LEFT JOIN metodos_pago m ON m.id=g.metodo_pago_id
+       WHERE ${activo} AND substr(g.fecha,1,7)=? GROUP BY 1 ORDER BY total DESC`).bind(mes),
+    env.DB.prepare(
+      `SELECT MIN(g.comercio) nombre, SUM(g.monto_centavos) total, COUNT(*) n FROM gastos g
+       WHERE ${activo} AND g.monto_centavos>0 AND g.comercio IS NOT NULL AND g.comercio<>'' AND substr(g.fecha,1,7)=?
+       GROUP BY lower(trim(g.comercio)) ORDER BY total DESC LIMIT 8`).bind(mes),
+    env.DB.prepare(
+      `SELECT COUNT(*) n, COALESCE(SUM(g.monto_centavos),0) total FROM gastos g JOIN metodos_pago m ON m.id=g.metodo_pago_id
+       WHERE ${activo} AND m.nombre='Sin clasificar'`),
+  ]);
+  return json({
+    mes, meses: meses.results, categorias: cats.results, dias: dias.results,
+    metodos: metodos.results, comercios: comercios.results, sin_clasificar: sin.results[0],
+  });
+}
+
+async function listar(env, url) {
+  const todos = url.searchParams.get('mes') === 'todos';
+  const mes = todos ? 'todos' : mesValido(url.searchParams.get('mes'));
   const archivados = url.searchParams.get('archivados') === '1';
   const { results } = await env.DB.prepare(
     `SELECT g.id, g.monto_centavos, g.fecha, g.comercio, g.categoria_id, g.metodo_pago_id, g.estado,
-            g.devolucion_de, g.imagen_key IS NOT NULL tiene_imagen, c.nombre categoria, m.nombre metodo
+            g.devolucion_de, g.metodo_original, g.imagen_key IS NOT NULL tiene_imagen, c.nombre categoria, m.nombre metodo
      FROM gastos g LEFT JOIN categorias c ON c.id=g.categoria_id LEFT JOIN metodos_pago m ON m.id=g.metodo_pago_id
-     WHERE substr(g.fecha,1,7)=? AND (? OR g.estado='activo') ORDER BY g.fecha DESC, g.id DESC`,
-  ).bind(mes, archivados ? 1 : 0).all();
+     WHERE (? OR substr(g.fecha,1,7)=?) AND (? OR g.estado='activo') ORDER BY g.fecha DESC, g.id DESC LIMIT 600`,
+  ).bind(todos ? 1 : 0, mes, archivados ? 1 : 0).all();
   return json({ mes, gastos: results });
 }
 
