@@ -139,6 +139,43 @@
   .ticket { margin-top:12px; width:100%; max-height:46vh; object-fit:contain; border-radius:12px; background:var(--track); }
   .err { color:var(--crit); font-size:13px; min-height:18px; margin:8px 0 0; }
 
+  /* raw / exportar */
+  body.raw .mesbar { display:none; }
+  body.raw { padding-bottom:calc(150px + env(safe-area-inset-bottom)); }
+  .seg { display:inline-flex; background:var(--track); border-radius:11px; padding:3px; gap:2px; }
+  .seg button { border:0; background:none; padding:7px 13px; border-radius:8px; font-weight:600; font-size:13px; color:var(--ink2); cursor:pointer; }
+  .seg button.on { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  .slicer-h { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .slicer-h h2 { margin:0; font-size:14px; }
+  .mini { border:0; background:none; color:var(--accent); font-size:12px; font-weight:600; cursor:pointer; padding:2px 4px; }
+  .chipsel { display:flex; flex-wrap:wrap; gap:7px; }
+  .cs { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--ring); background:var(--surface); color:var(--ink2); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:550; cursor:pointer; }
+  .cs .d { width:9px; height:9px; border-radius:50%; flex:none; }
+  .cs.on { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); border-color:var(--accent); color:var(--ink); }
+  .cs:not(.on) { opacity:.75; }
+  .presets { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px; }
+  .two3 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .fl8 { font-size:12px; color:var(--muted); margin:0 0 4px; display:block; }
+  .kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  @media (min-width:700px) { .kpis { grid-template-columns:repeat(4,1fr); } }
+  .kpi { background:var(--surface); border:1px solid var(--ring); border-radius:14px; padding:12px 14px; }
+  .kpi .k { font-size:12px; color:var(--muted); }
+  .kpi .v { font-size:22px; font-weight:700; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+  .tablewrap { overflow:auto; max-height:420px; border:1px solid var(--ring); border-radius:12px; }
+  table.raw { border-collapse:separate; border-spacing:0; width:100%; font-size:13px; }
+  table.raw th { position:sticky; top:0; background:var(--track); text-align:left; font-weight:650; padding:9px 12px; white-space:nowrap; cursor:pointer; user-select:none; border-bottom:1px solid var(--ring); }
+  table.raw td { padding:8px 12px; white-space:nowrap; border-bottom:1px solid var(--ring); max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+  table.raw td.n, table.raw th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  table.raw tr:last-child td { border-bottom:0; }
+  .exportbar { position:fixed; left:0; right:0; bottom:calc(60px + env(safe-area-inset-bottom)); z-index:19; background:color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-top:1px solid var(--ring); }
+  .exportbar .in { max-width:980px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .exportbar .res { flex:1; min-width:150px; font-size:13px; color:var(--ink2); }
+  .exportbar .res b { color:var(--ink); font-size:15px; }
+  .exportbar button { height:42px; padding:0 16px; border-radius:12px; border:1px solid var(--ring); background:var(--surface); font-weight:650; cursor:pointer; }
+  .exportbar button.pri { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+  .exportbar button:disabled { opacity:.4; cursor:default; }
+  .ok-toast { position:fixed; z-index:70; left:50%; transform:translateX(-50%); bottom:140px; background:var(--ink); color:var(--page); padding:9px 16px; border-radius:10px; font-size:14px; }
+
   /* tooltip */
   #tip { position:fixed; z-index:60; pointer-events:none; background:var(--ink); color:var(--page); border-radius:10px; padding:7px 11px; font-size:13px; line-height:1.35; box-shadow:0 4px 14px rgba(0,0,0,.25); opacity:0; transform:translateY(4px); transition:opacity .08s; max-width:240px; }
   #tip.on { opacity:1; transform:none; }
@@ -489,16 +526,188 @@ async function vPresupuestos() {
   return [card];
 }
 
+// ---------- raw / exportar ----------
+const COLS = [
+  { k: 'id_origen', t: 'ID ticket', def: true, get: (g) => g.id_origen || '' },
+  { k: 'fecha', t: 'Fecha', def: true, get: (g) => g.fecha },
+  { k: 'comercio', t: 'Comercio', def: true, get: (g) => g.comercio || '' },
+  { k: 'categoria', t: 'Categoría', def: true, get: (g) => g.categoria || '' },
+  { k: 'metodo', t: 'Método de pago', def: true, get: (g) => g.metodo || '' },
+  { k: 'monto', t: 'Monto', def: true, num: true, dec: 2, get: (g) => g.monto_centavos / 100 },
+  { k: 'tipo', t: 'Tipo', get: (g) => (g.monto_centavos < 0 ? 'Devolución' : 'Gasto') },
+  { k: 'estado', t: 'Estado', get: (g) => (g.estado === 'activo' ? 'Activo' : 'Archivado') },
+  { k: 'anio', t: 'Año', num: true, get: (g) => +g.fecha.slice(0, 4) },
+  { k: 'mes', t: 'Mes', get: (g) => g.fecha.slice(0, 7) },
+  { k: 'metodo_original', t: 'Método original (Sheet)', get: (g) => g.metodo_original || '' },
+  { k: 'id', t: 'ID interno', num: true, get: (g) => g.id },
+  { k: 'devolucion_de', t: 'Devolución de (ID)', num: true, get: (g) => g.devolucion_de ?? '' },
+  { k: 'origen', t: 'Origen', get: (g) => g.origen },
+  { k: 'registrado', t: 'Registrado (UTC)', get: (g) => g.creado_en || '' },
+  { k: 'foto', t: 'Tiene foto', get: (g) => (g.tiene_foto ? 'Sí' : 'No') },
+];
+let RAW = null;
+const rawVacio = () => ({ desde: '', hasta: '', cats: new Set(), mets: new Set(), origenes: new Set(), estado: 'activo', tipo: 'ambos', min: '', max: '', q: '' });
+
+function filtrarRaw() {
+  const f = RAW.f, q = f.q.trim().toLowerCase();
+  const min = f.min.trim() === '' ? null : pesosACentavos(f.min), max = f.max.trim() === '' ? null : pesosACentavos(f.max);
+  return RAW.filas.filter((g) => {
+    if (f.estado !== 'todos' && g.estado !== f.estado) return false;
+    if (f.tipo === 'gasto' && g.monto_centavos < 0) return false;
+    if (f.tipo === 'devolucion' && g.monto_centavos >= 0) return false;
+    if (f.desde && g.fecha < f.desde) return false;
+    if (f.hasta && g.fecha > f.hasta) return false;
+    if (f.cats.size && !f.cats.has(g.categoria || '(sin categoría)')) return false;
+    if (f.mets.size && !f.mets.has(g.metodo || '(sin método)')) return false;
+    if (f.origenes.size && !f.origenes.has(g.origen)) return false;
+    if (min !== null && Number.isFinite(min) && g.monto_centavos < min) return false;
+    if (max !== null && Number.isFinite(max) && g.monto_centavos > max) return false;
+    if (q && !(g.comercio || '').toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+const colsActivas = () => COLS.filter((c) => RAW.cols.has(c.k));
+const celdaCsv = (c, g) => {
+  const v = c.get(g);
+  if (v === '' || v == null) return '';
+  let s = c.dec != null ? Number(v).toFixed(c.dec) : String(v);
+  if (!c.num && /^[=+\-@\t\r]/.test(s)) s = "'" + s; // evita formulas al abrir en Excel
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+function bajar(nombre, mime, texto) {
+  const url = URL.createObjectURL(new Blob([texto], { type: mime }));
+  const a = h('a', { href: url, download: nombre }); document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+function aviso(txt) { const t = h('div', { class: 'ok-toast' }, txt); document.body.append(t); setTimeout(() => t.remove(), 2200); }
+
+async function vRaw() {
+  if (!RAW) {
+    const d = await api('/api/raw');
+    RAW = { filas: d.filas, f: rawVacio(), cols: new Set(COLS.filter((c) => c.def).map((c) => c.k)), sort: { k: 'fecha', dir: -1 } };
+  }
+  const f = RAW.f;
+  const distintos = (fn) => [...new Set(RAW.filas.map(fn))].sort((a, b) => a.localeCompare(b, 'es'));
+  const cats = distintos((g) => g.categoria || '(sin categoría)'), mets = distintos((g) => g.metodo || '(sin método)'), origenes = distintos((g) => g.origen);
+
+  const kpis = h('div', { class: 'kpis span2' });
+  const tabla = h('div');
+  const barra = h('div', { class: 'exportbar' });
+
+  const grupoChips = (lista, set, conColor) => {
+    const cont = h('div', { class: 'chipsel' });
+    const pintar = () => cont.replaceChildren(...lista.map((n) => h('button', { class: 'cs' + (set.has(n) ? ' on' : ''), onclick: () => { set.has(n) ? set.delete(n) : set.add(n); pintar(); actualizar(); } },
+      conColor ? h('span', { class: 'd', style: `background:${color(slot(n))}` }) : null, n)));
+    pintar();
+    return { cont, pintar };
+  };
+  const gc = grupoChips(cats, f.cats, true), gm = grupoChips(mets, f.mets, false), go = grupoChips(origenes, f.origenes, false);
+
+  const seg = (opts, get, set) => {
+    const el = h('div', { class: 'seg' });
+    const pintar = () => el.replaceChildren(...opts.map(([v, t]) => h('button', { class: get() === v ? 'on' : '', onclick: () => { set(v); pintar(); actualizar(); } }, t)));
+    pintar();
+    return el;
+  };
+  const inp = (props, key, extra = {}) => h('input', { class: 'inp', ...props, value: f[key], oninput: (e) => { f[key] = e.target.value; actualizar(); }, ...extra });
+  const iDesde = inp({ type: 'date' }, 'desde'), iHasta = inp({ type: 'date' }, 'hasta');
+  const fijarFechas = (d, hs) => { f.desde = d; f.hasta = hs; iDesde.value = d; iHasta.value = hs; actualizar(); };
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+  const mAct = mesActual();
+  const finMes = (m) => `${m}-${String(diasDelMes(m)).padStart(2, '0')}`;
+  const presets = h('div', { class: 'presets' }, [
+    ['Este mes', () => fijarFechas(mAct + '-01', finMes(mAct))],
+    ['Mes pasado', () => { const m = sumarMes(mAct, -1); fijarFechas(m + '-01', finMes(m)); }],
+    ['Últimos 3 meses', () => fijarFechas(sumarMes(mAct, -2) + '-01', finMes(mAct))],
+    ['Este año', () => fijarFechas(mAct.slice(0, 4) + '-01-01', mAct.slice(0, 4) + '-12-31')],
+    ['Todo', () => fijarFechas('', '')],
+  ].map(([t, fn]) => h('button', { class: 'cs', onclick: fn }, t)));
+
+  const colsBox = h('div', { class: 'chipsel' });
+  const pintarCols = () => colsBox.replaceChildren(...COLS.map((c) => h('button', { class: 'cs' + (RAW.cols.has(c.k) ? ' on' : ''), onclick: () => {
+    if (RAW.cols.has(c.k)) { if (RAW.cols.size > 1) RAW.cols.delete(c.k); } else RAW.cols.add(c.k);
+    pintarCols(); actualizar(); } }, c.t)));
+  pintarCols();
+
+  const tarjeta = (titulo, cuerpo, extra, cls = '') => h('section', { class: 'card ' + cls },
+    h('div', { class: 'slicer-h' }, h('h2', {}, titulo), extra || null), cuerpo);
+  const limpiar = (set, g) => h('button', { class: 'mini', onclick: () => { set.clear(); g.pintar(); actualizar(); } }, 'Limpiar');
+
+  function actualizar() {
+    const filas = filtrarRaw();
+    const total = filas.reduce((s, g) => s + g.monto_centavos, 0);
+    const fechas = filas.map((g) => g.fecha).sort();
+    kpis.replaceChildren(
+      ...[['Filas', filas.length.toLocaleString('es-MX')], ['Total', money(total)], ['Promedio', filas.length ? money(total / filas.length) : '—'],
+        ['Rango', fechas.length ? `${fechas[0].slice(5)} → ${fechas[fechas.length - 1].slice(5)}` : '—']]
+        .map(([k, v]) => h('div', { class: 'kpi' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v))));
+
+    // vista previa ordenable
+    const cols = colsActivas(), { k: sk, dir } = RAW.sort;
+    const sc = COLS.find((c) => c.k === sk) || COLS[1];
+    const orden = [...filas].sort((a, b) => {
+      const x = sc.get(a), y = sc.get(b);
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'es')) * dir;
+    });
+    const MAX = 100;
+    tabla.replaceChildren(
+      h('div', { class: 'tablewrap' }, h('table', { class: 'raw' },
+        h('thead', {}, h('tr', {}, cols.map((c) => h('th', { class: c.num ? 'n' : '', onclick: () => { RAW.sort = { k: c.k, dir: RAW.sort.k === c.k ? -RAW.sort.dir : 1 }; actualizar(); } },
+          c.t + (RAW.sort.k === c.k ? (RAW.sort.dir === 1 ? ' ▲' : ' ▼') : ''))))),
+        h('tbody', {}, orden.slice(0, MAX).map((g) => h('tr', {}, cols.map((c) => {
+          const v = c.get(g);
+          return h('td', { class: c.num ? 'n' : '', title: String(v) }, c.dec != null ? Number(v).toLocaleString('es-MX', { minimumFractionDigits: c.dec, maximumFractionDigits: c.dec }) : String(v));
+        })))))),
+      h('p', { class: 'sub', style: 'margin:8px 2px 0' }, filas.length > MAX ? `Vista previa: primeras ${MAX} de ${filas.length}. La descarga incluye todas.` : `${filas.length} fila${filas.length === 1 ? '' : 's'}. Toca un encabezado para ordenar.`));
+
+    // barra de exportacion
+    const vacio = !filas.length;
+    const nombre = `gastos_${f.desde || 'inicio'}_a_${f.hasta || hoy}`;
+    const q = (t) => (/[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t);
+    const texto = (sep, bom) => (bom ? '\ufeff' : '') + [cols.map((c) => q(c.t)).join(sep)]
+      .concat(filas.map((g) => cols.map((c) => celdaCsv(c, g)).join(sep))).join('\r\n');
+    barra.replaceChildren(h('div', { class: 'in' },
+      h('div', { class: 'res' }, h('b', {}, filas.length.toLocaleString('es-MX') + ' filas'), ` · ${cols.length} columnas · ${money(total)}`),
+      h('button', { disabled: vacio, onclick: async () => { try { await navigator.clipboard.writeText(texto('\t', false)); aviso('Copiado: pégalo en Excel o Sheets'); } catch (e) { aviso('No se pudo copiar'); } } }, 'Copiar'),
+      h('button', { disabled: vacio, onclick: () => bajar(nombre + '.json', 'application/json', JSON.stringify(filas.map((g) => Object.fromEntries(cols.map((c) => [c.k, c.get(g)]))), null, 2)) }, 'JSON'),
+      h('button', { class: 'pri', disabled: vacio, onclick: () => { bajar(nombre + '.csv', 'text/csv;charset=utf-8', texto(',', true)); aviso('Descargando CSV'); } }, 'Descargar CSV')));
+  }
+
+  const secFecha = tarjeta('Fecha', h('div', {}, presets, h('div', { class: 'two3' },
+    h('div', {}, h('label', { class: 'fl8' }, 'Desde'), iDesde), h('div', {}, h('label', { class: 'fl8' }, 'Hasta'), iHasta))));
+  const secCats = tarjeta('Categoría', gc.cont, limpiar(f.cats, gc));
+  const secMets = tarjeta('Método de pago', gm.cont, limpiar(f.mets, gm));
+  const secOtros = tarjeta('Más filtros', h('div', { style: 'display:grid;gap:12px' },
+    h('div', {}, h('label', { class: 'fl8' }, 'Estado'), seg([['activo', 'Activos'], ['archivado', 'Archivados'], ['todos', 'Todos']], () => f.estado, (v) => (f.estado = v))),
+    h('div', {}, h('label', { class: 'fl8' }, 'Tipo'), seg([['ambos', 'Ambos'], ['gasto', 'Gastos'], ['devolucion', 'Devoluciones']], () => f.tipo, (v) => (f.tipo = v))),
+    h('div', { class: 'two3' }, h('div', {}, h('label', { class: 'fl8' }, 'Monto mínimo'), inp({ inputMode: 'decimal', placeholder: '0.00' }, 'min')),
+      h('div', {}, h('label', { class: 'fl8' }, 'Monto máximo'), inp({ inputMode: 'decimal', placeholder: 'sin tope' }, 'max'))),
+    h('div', {}, h('label', { class: 'fl8' }, 'Comercio contiene'), inp({ type: 'search', placeholder: 'ej. costco' }, 'q')),
+    h('div', {}, h('label', { class: 'fl8' }, 'Origen del registro'), go.cont)));
+  const secCols = tarjeta('Columnas a exportar', colsBox, h('span', {},
+    h('button', { class: 'mini', onclick: () => { RAW.cols = new Set(COLS.filter((c) => c.def).map((c) => c.k)); pintarCols(); actualizar(); } }, 'Básicas'),
+    h('button', { class: 'mini', onclick: () => { RAW.cols = new Set(COLS.map((c) => c.k)); pintarCols(); actualizar(); } }, 'Todas')), 'span2');
+  const secResultado = h('section', { class: 'card span2' }, h('div', { class: 'slicer-h' }, h('h2', {}, 'Vista previa de los datos'),
+    h('button', { class: 'mini', onclick: () => { RAW.f = rawVacio(); render(); } }, 'Restablecer filtros')), kpis, h('div', { style: 'height:12px' }), tabla);
+
+  document.body.append(barra);
+  actualizar();
+  return [h('div', { class: 'grid' }, h('p', { class: 'sub span2', style: 'margin:2px 2px 0' },
+    'Arma tu extracción: elige filtros, columnas y descarga. Sin selección en un filtro = incluye todo.'),
+    secFecha, secOtros, secCats, secMets, secCols, secResultado)];
+}
+
 // ---------- shell ----------
 const ICONOS = {
   resumen: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   gastos: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
   presupuestos: '<circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/>',
+  raw: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
 };
 function pintarNav() {
   const nav = $('#nav'); nav.replaceChildren();
-  for (const [k, t] of [['resumen', 'Resumen'], ['gastos', 'Gastos'], ['presupuestos', 'Presupuestos']]) {
-    const b = h('button', { class: state.vista === k ? 'on' : '', onclick: () => { state.vista = k; if (state.mes === 'todos' && k !== 'gastos') state.mes = mesActual(); if (k !== 'gastos') state.fmet = ''; render(); } });
+  for (const [k, t] of [['resumen', 'Resumen'], ['gastos', 'Gastos'], ['presupuestos', 'Presupuestos'], ['raw', 'Raw']]) {
+    const b = h('button', { class: state.vista === k ? 'on' : '', onclick: () => { state.vista = k; if (state.mes === 'todos' && k !== 'gastos') state.mes = mesActual(); if (k !== 'gastos') state.fmet = ''; if (k === 'raw') RAW = null; render(); } });
     const s = document.createElementNS(NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.innerHTML = ICONOS[k];
     b.append(s, t); nav.append(b);
   }
@@ -524,11 +733,13 @@ function moverMes(k) {
 let token = 0;
 async function render() {
   const mi = ++token;
+  document.querySelectorAll('.exportbar').forEach((e) => e.remove());
+  document.body.classList.toggle('raw', state.vista === 'raw');
   pintarNav(); pintarMeses();
   const main = $('#main');
   main.replaceChildren(h('div', { class: 'grid' }, h('div', { class: 'skel span2' }), h('div', { class: 'skel' }), h('div', { class: 'skel' })));
   try {
-    const vista = { resumen: vResumen, gastos: vGastos, presupuestos: vPresupuestos }[state.vista];
+    const vista = { resumen: vResumen, gastos: vGastos, presupuestos: vPresupuestos, raw: vRaw }[state.vista];
     const nodos = await vista();
     if (mi !== token) return;
     main.replaceChildren(...nodos);

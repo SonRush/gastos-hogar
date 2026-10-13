@@ -64,6 +64,7 @@ export default {
       if (path === '/api/meta') return meta(env, auth);
       if (path === '/api/resumen') return resumen(env, url);
       if (path === '/api/analitica') return analitica(env, url);
+      if (path === '/api/raw') return raw(env);
       if (path === '/api/gastos' && req.method === 'GET') return listar(env, url);
 
       let m = path.match(/^\/api\/gastos\/(\d+)$/);
@@ -135,6 +136,19 @@ async function analitica(env, url) {
     mes, meses: meses.results, categorias: cats.results, dias: dias.results,
     metodos: metodos.results, comercios: comercios.results, sin_clasificar: sin.results[0],
   });
+}
+
+// Todos los gastos con todas sus columnas, para la seccion Raw (se filtra y exporta en el navegador).
+// No expone ids de chat de Telegram: solo el origen del registro.
+async function raw(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT g.id, g.id_origen, g.fecha, g.comercio, c.nombre categoria, m.nombre metodo, g.metodo_original,
+            g.monto_centavos, g.estado, g.devolucion_de, g.creado_en, g.imagen_key IS NOT NULL tiene_foto,
+            CASE WHEN g.creado_por='migracion' THEN 'Migración' WHEN g.creado_por LIKE '%@%' THEN 'Dashboard' ELSE 'Telegram' END origen
+     FROM gastos g LEFT JOIN categorias c ON c.id=g.categoria_id LEFT JOIN metodos_pago m ON m.id=g.metodo_pago_id
+     ORDER BY g.fecha, g.id LIMIT 20000`,
+  ).all();
+  return json({ filas: results });
 }
 
 async function listar(env, url) {
