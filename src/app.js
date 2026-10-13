@@ -21,7 +21,8 @@ async function verificarAccess(req, env) {
     const header = JSON.parse(new TextDecoder().decode(b64u(h)));
     const payload = JSON.parse(new TextDecoder().decode(b64u(p)));
     const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-    if (!aud.includes(env.ACCESS_AUD)) throw new Error('aud');
+    const validos = env.ACCESS_AUD.split(',').map((x) => x.trim()).filter(Boolean);
+    if (!aud.some((a) => validos.includes(a))) throw new Error('aud');
     if (payload.iss !== `https://${env.ACCESS_TEAM_DOMAIN}`) throw new Error('iss');
     if (!payload.exp || payload.exp * 1000 < Date.now()) throw new Error('exp');
 
