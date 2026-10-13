@@ -100,7 +100,8 @@ async function onPhoto(msg, chatId, env) {
   const resp = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${info.result.file_path}`);
   const bytes = new Uint8Array(await resp.arrayBuffer());
 
-  const key = `tickets/${hoyMX()}-${crypto.randomUUID()}.jpg`;
+  // El ID del ticket y el nombre del archivo son el mismo (TKT-<ms>), como en el bot anterior.
+  const key = `tickets/TKT-${Date.now()}.jpg`;
   await env.TICKETS.put(key, bytes, { httpMetadata: { contentType: 'image/jpeg' } });
 
   const { results: cats } = await env.DB.prepare('SELECT nombre, alias FROM categorias WHERE activa=1').all();
@@ -206,9 +207,10 @@ async function onCallback(cb, chatId, env) {
   if (!met) return;
 
   const ins = await env.DB.prepare(
-    `INSERT INTO gastos (monto_centavos, fecha, comercio, categoria_id, metodo_pago_id, imagen_key, creado_por)
-     VALUES (?,?,?,?,?,?,?)`,
-  ).bind(d.monto_centavos, d.fecha, d.comercio, cat.id, mid, p.imagen_key, chatId).run();
+    `INSERT INTO gastos (monto_centavos, fecha, comercio, categoria_id, metodo_pago_id, imagen_key, creado_por, id_origen)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).bind(d.monto_centavos, d.fecha, d.comercio, cat.id, mid, p.imagen_key, chatId,
+    p.imagen_key.replace(/^tickets\//, '').replace(/\.jpg$/, '')).run();
   await env.DB.batch([
     env.DB.prepare('DELETE FROM tickets_pendientes WHERE id=?').bind(pid),
     env.DB.prepare('INSERT INTO cambios (gasto_id, accion, detalle, autor) VALUES (?,?,?,?)')
